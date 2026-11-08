@@ -8,12 +8,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Works both with the project folder in the repo and with just Dophamine.zip uploaded.
       - name: Locate project
         run: |
           unzip -q -o '*.zip' -d _project || true
           SETTINGS=$(find . -name settings.gradle -not -path './.git/*' | head -n 1)
-          [ -n "$SETTINGS" ] || { echo "settings.gradle not found: upload Dophamine.zip or the project files"; exit 1; }
+          [ -n "$SETTINGS" ] || { echo "settings.gradle not found: upload the project zip"; exit 1; }
           echo "SRC=$(cd "$(dirname "$SETTINGS")" && pwd)" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
@@ -47,7 +46,6 @@ jobs:
           name: Dophamine-apk
           path: out/Dophamine.apk
 
-      # Fails the run if the Xposed API ended up inside the APK (Vector would refuse to load it).
       - name: Verify APK does not bundle the Xposed API
         run: |
           python3 - <<'PY'
