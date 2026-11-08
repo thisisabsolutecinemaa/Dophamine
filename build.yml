@@ -1,0 +1,72 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Works both with the project folder in the repo and with just Dophamine.zip uploaded.
+      - name: Locate project
+        run: |
+          if [ -f Dophamine.zip ]; then unzip -q -o Dophamine.zip -d _project; fi
+          SETTINGS=$(find . -name settings.gradle -not -path './.git/*' | head -n 1)
+          [ -n "$SETTINGS" ] || { echo "settings.gradle not found: upload Dophamine.zip or the project files"; exit 1; }
+          echo "SRC=$(cd "$(dirname "$SETTINGS")" && pwd)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: DSP self-test
+        run: |
+          cd "$SRC"
+          mkdir -p /tmp/out
+          javac -encoding UTF-8 -d /tmp/out app/src/main/java/com/dophamine/voice/dsp/*.java app/src/main/java/com/dophamine/voice/check/*.java
+          java -Dfile.encoding=UTF-8 -cp /tmp/out com.dophamine.voice.dsp.DspSelfTest
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '7.6.4'
+
+      - name: Build debug APK
+        run: |
+          cd "$SRC"
+          gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Collect APK
+        run: |
+          mkdir -p out
+          cp "$SRC"/app/build/outputs/apk/debug/*.apk out/Dophamine.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dophamine-apk
+          path: out/Dophamine.apk
+
+      # Fails the run if the Xposed API ended up inside the APK (Vector would refuse to load it).
+      - name: Verify APK does not bundle the Xposed API
+        run: |
+          python3 - <<'PY'
+          import struct, sys, zipfile
+          z = zipfile.ZipFile('out/Dophamine.apk')
+          bad = []
+          for n in z.namelist():
+              if n.startswith('classes') and n.endswith('.dex'):
+                  d = z.read(n)
+                  u = lambda o: struct.unpack_from('<I', d, o)[0]
+                  so, to, cs, co = u(0x3C), u(0x44), u(0x60), u(0x64)
+                  for i in range(cs):
+                      p = u(so + u(to + u(co + i * 32) * 4) * 4)
+                      while d[p] & 0x80:
+                          p += 1
+                      p += 1
+                      name = d[p:d.index(b'\0', p)].decode('utf-8', 'replace')
+                      if name.startswith('Lde/robv/android/xposed/'):
+                          bad.append(name)
+          print('Xposed API classes defined inside the APK:', len(bad))
+          sys.exit(1 if bad else 0)
+          PY
