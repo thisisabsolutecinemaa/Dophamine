@@ -11,7 +11,7 @@ jobs:
       # Works both with the project folder in the repo and with just Dophamine.zip uploaded.
       - name: Locate project
         run: |
-          if [ -f Dophamine.zip ]; then unzip -q -o Dophamine.zip -d _project; fi
+          unzip -q -o '*.zip' -d _project || true
           SETTINGS=$(find . -name settings.gradle -not -path './.git/*' | head -n 1)
           [ -n "$SETTINGS" ] || { echo "settings.gradle not found: upload Dophamine.zip or the project files"; exit 1; }
           echo "SRC=$(cd "$(dirname "$SETTINGS")" && pwd)" >> "$GITHUB_ENV"
